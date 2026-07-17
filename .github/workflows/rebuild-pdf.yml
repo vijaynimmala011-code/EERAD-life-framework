@@ -1,0 +1,47 @@
+name: Rebuild compatibility PDF
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - '.pdf-build/**'
+      - '.github/workflows/rebuild-pdf.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  rebuild:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Rebuild and verify PDF
+        shell: bash
+        run: |
+          cat .pdf-build/part-*.b64 | tr -d '\n\r' | base64 --decode > EERAD-Life-Framework.pdf
+          echo '6bdcea640d037533645bbfa4d66d5c9b46dad49f170d01ba3a59775d3607eb8b  EERAD-Life-Framework.pdf' | sha256sum --check --strict
+          python - <<'PY'
+          from pathlib import Path
+          data = Path('EERAD-Life-Framework.pdf').read_bytes()
+          assert data.startswith(b'%PDF-1.4'), 'Unexpected PDF header'
+          assert data.rstrip().endswith(b'%%EOF'), 'Missing PDF end marker'
+          assert b'/Count 3' in data, 'Expected a three-page PDF'
+          print(f'Validated {len(data)} bytes')
+          PY
+
+      - name: Commit compatibility PDF
+        shell: bash
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add EERAD-Life-Framework.pdf
+          if git diff --cached --quiet; then
+            echo 'PDF is already current.'
+          else
+            git commit -m 'Fix cross-device PDF rendering'
+            git push
+          fi
